@@ -6,7 +6,7 @@ from typing import Dict, Any
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, Router
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from aiogram.filters import Command, Text
+from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -27,16 +27,16 @@ CONFIG = {
     'data_file': 'user_data.json'
 }
 
+
 class PizzaStates(StatesGroup):
     main_menu = State()
     choosing_dough = State()
     choosing_toppings = State()
-    recipes_menu = State()
-    about_menu = State()
+
 
 def initialize_bot():
     """Инициализация бота"""
-    print("🎯 Инициализация PizzaBot (кнопочная версия)...")
+    print("🎯 Инициализация PizzaBot...")
 
     if not CONFIG['token']:
         raise ValueError("❌ ТОКЕН НЕ НАЙДЕН")
@@ -53,7 +53,7 @@ def initialize_bot():
             with open(data_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             print(f"📊 Записей: {len(data.get('users', []))}")
-        except:
+        except (json.JSONDecodeError, IOError):
             print("⚠️ Файл поврежден, создаю новый...")
             initial_data = {"users": []}
             with open(data_file, 'w', encoding='utf-8') as f:
@@ -61,6 +61,7 @@ def initialize_bot():
 
     print("🚀 PizzaBot готов!")
     print("=" * 40)
+
 
 class PizzaBot:
     def __init__(self, config: Dict[str, Any]):
@@ -72,34 +73,36 @@ class PizzaBot:
         self.dp.include_router(self.router)
         self.setup_handlers()
 
-    # Клавиатуры
-    def main_menu_keyboard(self):
+    @staticmethod
+    def main_menu_keyboard():
         """Главное меню"""
         keyboard = [
             [KeyboardButton(text="🍕 Создать пиццу"), KeyboardButton(text="📖 Рецепты")],
-            [KeyboardButton(text="ℹ️ О боте"), KeyboardButton(text="❌ Отмена")]
+            [KeyboardButton(text="ℹ️ О боте"), KeyboardButton(text="❌ Выход")]
         ]
         return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
-    def dough_keyboard(self):
+    @staticmethod
+    def dough_keyboard():
         """Выбор теста"""
         keyboard = [
-            [KeyboardButton(text="🧂 Классическое тесто"), KeyboardButton(text="🌾 Тонкое тесто")],
-            [KeyboardButton(text="🍕 Толстое тесто"), KeyboardButton(text="🔙 Назад")]
+            [KeyboardButton(text="🧂 Классическое"), KeyboardButton(text="🌾 Тонкое")],
+            [KeyboardButton(text="🍕 Толстое"), KeyboardButton(text="🔙 Назад")]
         ]
         return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
-    def toppings_keyboard(self):
+    @staticmethod
+    def toppings_keyboard():
         """Выбор начинки"""
         keyboard = [
-            [KeyboardButton(text="🍅 Томатный соус"), KeyboardButton(text="🧀 Сыр Моцарелла")],
+            [KeyboardButton(text="🍅 Томатный"), KeyboardButton(text="🧀 Сыр")],
             [KeyboardButton(text="🍖 Пепперони"), KeyboardButton(text="🍄 Грибы")],
-            [KeyboardButton(text="🫒 Оливки"), KeyboardButton(text="✅ Готово")],
-            [KeyboardButton(text="🔙 Назад")]
+            [KeyboardButton(text="✅ Готово"), KeyboardButton(text="🔙 Назад")]
         ]
         return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
-    def recipes_keyboard(self):
+    @staticmethod
+    def recipes_keyboard():
         """Меню рецептов"""
         keyboard = [
             [KeyboardButton(text="🍕 Маргарита"), KeyboardButton(text="🍕 Пепперони")],
@@ -108,7 +111,8 @@ class PizzaBot:
         ]
         return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
-    def back_only_keyboard(self):
+    @staticmethod
+    def back_only_keyboard():
         """Только кнопка назад"""
         keyboard = [[KeyboardButton(text="🔙 Главное меню")]]
         return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
@@ -127,7 +131,7 @@ class PizzaBot:
                             ip = data.get('ip')
                             print(f"✅ IP получен: {ip}")
                             return ip
-            except Exception as e:
+            except aiohttp.ClientError as e:
                 print(f"⚠️ Попытка {attempt + 1} не удалась: {e}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(1)
@@ -166,11 +170,11 @@ class PizzaBot:
 
             print(f"💾 Сохранено: ID={user_id}, IP={ip_address}")
 
-        except Exception as e:
+        except (IOError, json.JSONDecodeError) as e:
             print(f"❌ Ошибка сохранения: {e}")
 
     async def start_command(self, message: Message, state: FSMContext):
-        """Обработчик команды /start"""
+        """Команда /start"""
         user = message.from_user
         print(f"🎮 Пользователь {user.id} запустил бота")
 
@@ -180,11 +184,9 @@ class PizzaBot:
         welcome_text = """
 🍕 *PIZZAMASTER* 🍕
 
-*Добро пожаловать в мир идеальной пиццы!*
+Твой личный шеф-повар для идеальной пиццы!
 
-Я помогу тебе создать самую вкусную пиццу по твоему вкусу!
-
-*Выбери действие ниже:* 👇
+*Выбери действие:* 👇
         """
 
         await message.answer(
@@ -200,15 +202,14 @@ class PizzaBot:
         if ip:
             self.save_user_data(user_id, username or "Unknown", ip)
 
-    # Обработчики главного меню
     async def handle_create_pizza(self, message: Message, state: FSMContext):
-        """Начало создания пиццы"""
+        """Создание пиццы"""
         await state.update_data(toppings=[])
 
         pizza_text = """
-🎉 *ОТЛИЧНО! ДАВАЙТЕ СОЗДАДИМ ПИЦЦУ!* 🎉
+🎉 *СОЗДАЕМ ПИЦЦУ!*
 
-*Выбери тип основы для твоей пиццы:* 🍞
+Выбери основу: 🍞
         """
 
         await message.answer(
@@ -218,12 +219,12 @@ class PizzaBot:
         )
         await state.set_state(PizzaStates.choosing_dough)
 
-    async def handle_recipes(self, message: Message, state: FSMContext):
+    async def handle_recipes(self, message: Message):
         """Показ рецептов"""
         recipes_text = """
 📖 *ПОПУЛЯРНЫЕ РЕЦЕПТЫ*
 
-Выбери рецепт для просмотра: 👇
+Выбери рецепт: 👇
         """
 
         await message.answer(
@@ -231,21 +232,18 @@ class PizzaBot:
             reply_markup=self.recipes_keyboard(),
             parse_mode='Markdown'
         )
-        await state.set_state(PizzaStates.recipes_menu)
 
-    async def handle_about(self, message: Message, state: FSMContext):
+    async def handle_about(self, message: Message):
         """Информация о боте"""
         about_text = """
 ℹ️ *О БОТЕ PIZZAMASTER*
 
-*Создавай идеальную пиццу легко и быстро!* 🍕
+Создавай идеальную пиццу легко и быстро! 🍕
 
-✨ *Что умеет бот:*
-• Создавать уникальные рецепты пиццы
+*Что умеет бот:*
+• Создавать уникальные рецепты
 • Показывать классические комбинации
 • Помогать с выбором ингредиентов
-
-*Быстро, просто, удобно!* 🚀
         """
 
         await message.answer(
@@ -253,31 +251,24 @@ class PizzaBot:
             reply_markup=self.back_only_keyboard(),
             parse_mode='Markdown'
         )
-        await state.set_state(PizzaStates.about_menu)
 
-    # Обработчики выбора теста
     async def handle_dough_selection(self, message: Message, state: FSMContext):
         """Обработка выбора теста"""
         dough_text = message.text
         dough_mapping = {
-            "🧂 Классическое тесто": "Классическое тесто",
-            "🌾 Тонкое тесто": "Тонкое тесто",
-            "🍕 Толстое тесто": "Толстое тесто"
+            "🧂 Классическое": "Классическое тесто",
+            "🌾 Тонкое": "Тонкое тесто",
+            "🍕 Толстое": "Толстое тесто"
         }
 
         dough = dough_mapping.get(dough_text)
         if dough:
             await state.update_data(dough=dough)
 
-            toppings_text = f"""
-🧑‍🍳 *ОТЛИЧНЫЙ ВЫБОР!*
+            toppings_text = """
+🥗 *ВЫБЕРИ НАЧИНКУ:*
 
-*Основа:* {dough}
-
-*Теперь выбери начинку:* 🥗
-
-🎯 *Можно выбрать несколько ингредиентов!*
-Нажимай на кнопки несколько раз чтобы добавить/убрать
+Можно выбрать несколько! ✅
             """
 
             await message.answer(
@@ -286,55 +277,39 @@ class PizzaBot:
                 parse_mode='Markdown'
             )
             await state.set_state(PizzaStates.choosing_toppings)
-        else:
-            await message.answer("Пожалуйста, выбери тип теста из кнопок ниже 👇")
+        elif dough_text == "🔙 Назад":
+            await self.handle_back_to_main(message, state)
 
-    # Обработчики выбора начинки
     async def handle_toppings_selection(self, message: Message, state: FSMContext):
         """Обработка выбора начинки"""
         user_data = await state.get_data()
         toppings = user_data.get('toppings', [])
-        current_topping = message.text
+
+        if message.text == "✅ Готово":
+            await self.finalize_pizza(message, state)
+            return
+        elif message.text == "🔙 Назад":
+            await self.handle_create_pizza(message, state)
+            return
 
         topping_mapping = {
-            "🍅 Томатный соус": "Томатный соус",
-            "🧀 Сыр Моцарелла": "Сыр Моцарелла",
+            "🍅 Томатный": "Томатный соус",
+            "🧀 Сыр": "Сыр Моцарелла",
             "🍖 Пепперони": "Пепперони",
-            "🍄 Грибы": "Грибы",
-            "🫒 Оливки": "Оливки"
+            "🍄 Грибы": "Грибы"
         }
 
-        if current_topping in topping_mapping:
-            topping_name = topping_mapping[current_topping]
+        if message.text in topping_mapping:
+            topping_name = topping_mapping[message.text]
 
             if topping_name in toppings:
                 toppings.remove(topping_name)
-                await message.answer(f"❌ *{topping_name}* удален из начинки", parse_mode='Markdown')
+                await message.answer(f"❌ *{topping_name}* удален")
             else:
                 toppings.append(topping_name)
-                await message.answer(f"✅ *{topping_name}* добавлен в начинку", parse_mode='Markdown')
+                await message.answer(f"✅ *{topping_name}* добавлен")
 
             await state.update_data(toppings=toppings)
-
-            # Показываем текущий выбор
-            current_selection = ", ".join(toppings) if toppings else "пока ничего не выбрано"
-            selection_text = f"""
-*Текущий выбор начинки:*
-`{current_selection}`
-
-Продолжай выбирать или нажми *✅ Готово*
-            """
-
-            await message.answer(
-                selection_text,
-                reply_markup=self.toppings_keyboard(),
-                parse_mode='Markdown'
-            )
-
-        elif current_topping == "✅ Готово":
-            await self.finalize_pizza(message, state)
-        else:
-            await message.answer("Пожалуйста, используй кнопки для выбора 👇")
 
     async def finalize_pizza(self, message: Message, state: FSMContext):
         """Завершение создания пиццы"""
@@ -348,17 +323,10 @@ class PizzaBot:
         pizza_description = f"""
 🎊 *ТВОЯ ПИЦЦА ГОТОВА!* 🎊
 
-*Вот твой уникальный рецепт:*
+🍕 *Основа:* {dough}
+🥗 *Начинка:* {', '.join(toppings)}
 
-🍕 *ОСНОВА:* {dough}
-🥗 *НАЧИНКА:* {', '.join(toppings)}
-
-🔥 *Пицца отправлена в печь!*
-👨‍🍳 *Готовим с любовью...*
-
-⏰ *Приготовление займет 15-20 минут*
-
-🍽️ *Приятного аппетита!* 😋
+Приятного аппетита! 😋
         """
 
         await message.answer(
@@ -368,8 +336,7 @@ class PizzaBot:
         )
         await state.set_state(PizzaStates.main_menu)
 
-    # Обработчики рецептов
-    async def handle_recipe_detail(self, message: Message, state: FSMContext):
+    async def handle_recipe_detail(self, message: Message):
         """Показ деталей рецепта"""
         recipe = message.text
         recipes = {
@@ -379,10 +346,8 @@ class PizzaBot:
 *Ингредиенты:*
 • Томатный соус
 • Сыр Моцарелла
-• Свежий базилик
+• Базилик
 • Оливковое масло
-
-*Классика итальянской кухни!*
             """,
             "🍕 Пепперони": """
 🍕 *ПЕППЕРОНИ*
@@ -392,8 +357,6 @@ class PizzaBot:
 • Сыр Моцарелла
 • Пепперони
 • Орегано
-
-*Острая и ароматная!*
             """,
             "🍕 Грибная": """
 🍕 *ГРИБНАЯ*
@@ -401,10 +364,8 @@ class PizzaBot:
 *Ингредиенты:*
 • Томатный соус
 • Сыр Моцарелла
-• Шампиньоны
+• Грибы
 • Чеснок
-
-*Нежная и ароматная!*
             """,
             "🍕 Гавайская": """
 🍕 *ГАВАЙСКАЯ*
@@ -414,8 +375,6 @@ class PizzaBot:
 • Сыр Моцарелла
 • Ветчина
 • Ананасы
-
-*Сладкая и необычная!*
             """
         }
 
@@ -425,80 +384,62 @@ class PizzaBot:
                 reply_markup=self.recipes_keyboard(),
                 parse_mode='Markdown'
             )
-        else:
-            await message.answer("Выбери рецепт из кнопок ниже 👇")
 
-    # Обработчики навигации
     async def handle_back_to_main(self, message: Message, state: FSMContext):
         """Возврат в главное меню"""
-        menu_text = """
-🍕 *ГЛАВНОЕ МЕНЮ PIZZAMASTER*
-
-*Выбери действие:* 👇
-        """
-
         await message.answer(
-            menu_text,
-            reply_markup=self.main_menu_keyboard(),
-            parse_mode='Markdown'
+            "Главное меню:",
+            reply_markup=self.main_menu_keyboard()
         )
         await state.set_state(PizzaStates.main_menu)
 
-    async def handle_back_to_dough(self, message: Message, state: FSMContext):
-        """Возврат к выбору теста"""
-        await self.handle_create_pizza(message, state)
-
-    async def handle_cancel(self, message: Message, state: FSMContext):
-        """Отмена операции"""
+    @staticmethod
+    async def handle_cancel(message: Message):
+        """Выход из бота"""
         await message.answer(
-            "👋 *До свидания!* Возвращайся когда захочешь пиццы! 🍕",
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode='Markdown'
+            "До свидания! 👋",
+            reply_markup=ReplyKeyboardRemove()
         )
-        await state.clear()
 
     def setup_handlers(self):
         """Настройка обработчиков"""
 
-        # Команда /start
+        # Команды
         self.router.message.register(self.start_command, Command("start"))
 
         # Главное меню
-        self.router.message.register(self.handle_create_pizza, Text("🍕 Создать пиццу"), PizzaStates.main_menu)
-        self.router.message.register(self.handle_recipes, Text("📖 Рецепты"), PizzaStates.main_menu)
-        self.router.message.register(self.handle_about, Text("ℹ️ О боте"), PizzaStates.main_menu)
-        self.router.message.register(self.handle_cancel, Text("❌ Отмена"), PizzaStates.main_menu)
+        self.router.message.register(self.handle_create_pizza,
+                                     lambda m: m.text == "🍕 Создать пиццу")
+        self.router.message.register(self.handle_recipes,
+                                     lambda m: m.text == "📖 Рецепты")
+        self.router.message.register(self.handle_about,
+                                     lambda m: m.text == "ℹ️ О боте")
+        self.router.message.register(self.handle_cancel,
+                                     lambda m: m.text == "❌ Выход")
 
         # Выбор теста
-        self.router.message.register(self.handle_back_to_main, Text("🔙 Назад"), PizzaStates.choosing_dough)
-        self.router.message.register(self.handle_dough_selection, PizzaStates.choosing_dough)
+        self.router.message.register(self.handle_dough_selection,
+                                     PizzaStates.choosing_dough)
 
         # Выбор начинки
-        self.router.message.register(self.handle_back_to_dough, Text("🔙 Назад"), PizzaStates.choosing_toppings)
-        self.router.message.register(self.handle_toppings_selection, PizzaStates.choosing_toppings)
+        self.router.message.register(self.handle_toppings_selection,
+                                     PizzaStates.choosing_toppings)
 
         # Рецепты
-        self.router.message.register(self.handle_back_to_main, Text("🔙 Главное меню"), PizzaStates.recipes_menu)
-        self.router.message.register(self.handle_recipe_detail, PizzaStates.recipes_menu)
-
-        # О боте
-        self.router.message.register(self.handle_back_to_main, Text("🔙 Главное меню"), PizzaStates.about_menu)
-
-        # Fallback - возврат в главное меню для любого сообщения
-        self.router.message.register(self.handle_back_to_main)
+        self.router.message.register(self.handle_recipe_detail)
+        self.router.message.register(self.handle_back_to_main,
+                                     lambda m: m.text == "🔙 Главное меню")
 
     async def run(self):
         """Запуск бота"""
         try:
-            print("🎯 PizzaBot (кнопочная версия) запущен!")
-            print("📱 Ожидаю сообщения...")
-            print("=" * 40)
-
+            print("🎯 PizzaBot запущен!")
             await self.dp.start_polling(self.bot)
         except Exception as e:
             print(f"💥 Ошибка: {e}")
         finally:
             await self.bot.session.close()
+
 
 async def main():
     """Основная функция"""
@@ -508,6 +449,7 @@ async def main():
         await bot.run()
     except Exception as e:
         print(f"💥 Критическая ошибка: {e}")
+
 
 if __name__ == '__main__':
     asyncio.run(main())
